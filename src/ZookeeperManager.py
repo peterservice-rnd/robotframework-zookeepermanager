@@ -219,7 +219,7 @@ class ZookeeperManager(object):
         """
 
         value, _stat = self._connection.get(path)
-        if PY3:
+        if PY3 and value is not None:
             return value.decode(self._connection.zk_encoding)
         return value
 
@@ -243,21 +243,16 @@ class ZookeeperManager(object):
 
     def check_node_value_existence(self, path):
         """
-        Check that value of node is not empty, and is not equal to [] or null
+        Check that value of node isn't empty.
 
         *Args:*\n
             _path_ - node path \n
         """
-
         value = self.get_value(path)
-        if len(value) == 0:
-            raise Exception("Value of Zookeeper node {} is empty".format(path))
-        elif value == "[]":
-            raise Exception("Value of Zookeeper node {} is equal []".format(path))
-        elif value == "{}":
-            raise Exception("Value of Zookeeper node {} is equal {{}}".format(path))
-        elif value == "null":
-            raise Exception("Value of Zookeeper node {} is equal null".format(path))
+        if value in ("{}", "[]", "null"):
+            raise Exception("Value of Zookeeper node {0} is equal {1}".format(path, value))
+        elif not value:
+            raise Exception("Value of Zookeeper node {0} is empty".format(path))
         else:
             BuiltIn().log("Zookeeper node {0} value is exist: '{1}' ".format(path, value))
 
