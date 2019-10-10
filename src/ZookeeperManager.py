@@ -1,16 +1,21 @@
 # -*- coding: utf-8 -*-
 
+from typing import Dict, List, Optional, Union
+
 from JsonValidator import JsonValidator
 from kazoo.client import KazooClient
 from kazoo.exceptions import NoNodeError
 from robot.libraries.BuiltIn import BuiltIn
-from robot.utils import ConnectionCache, PY3
+from robot.utils import ConnectionCache
+
+# custom types
+ZkCheckResult = Dict[str, Union[str, bool, Exception]]  # noqa: E993
 
 
 class ZookeeperConnection(KazooClient):
     """KazooClient extended with zk_encoding"""
 
-    def __init__(self, hosts, timeout, zk_encoding='utf-8'):
+    def __init__(self, hosts: str, timeout: Union[int, float], zk_encoding: str = 'utf-8') -> None:
         """Initialize object.
 
         Args:\n
@@ -18,7 +23,7 @@ class ZookeeperConnection(KazooClient):
             _timeout_ - connection timeout in seconds.\n
             _zk_encoding_ - encoding of data in Zookeeper. \n
         """
-        super(ZookeeperConnection, self).__init__(hosts, timeout)
+        super().__init__(hosts, timeout)
         self.zk_encoding = zk_encoding
 
 
@@ -35,16 +40,31 @@ class ZookeeperManager(object):
 
     ROBOT_LIBRARY_SCOPE = 'GLOBAL'
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Library initialization.
         Robot Framework ConnectionCache() class is prepared for working with concurrent connections."""
 
         self.bi = BuiltIn()
-        self._connection = None
+        self._connection: Optional[ZookeeperConnection] = None
         self._cache = ConnectionCache()
-        self._connections = []
+        self._connections: List[ZookeeperConnection] = []
 
-    def connect_to_zookeeper(self, hosts, timeout=10, alias=None, zk_encoding='utf-8'):
+    @property
+    def connection(self) -> ZookeeperConnection:
+        """Getting current connection to ZooKeeper.
+
+        *Raises:*\n
+            RuntimeError: if a connection doesn't exist.
+
+        *Returns:*\n
+            The current ZooKeeper connection.
+        """
+        if self._connection is None:
+            raise RuntimeError('There is no active connection to ZooKeeper.')
+        return self._connection
+
+    def connect_to_zookeeper(self, hosts: str, timeout: Union[int, float] = 10, alias: str = None,
+                             zk_encoding: str = 'utf-8') -> int:
         """
         Connection to Zookeeper
 
@@ -66,7 +86,7 @@ class ZookeeperManager(object):
         self._connections.append(self._connection)
         return self._cache.register(self._connection, alias)
 
-    def disconnect_from_zookeeper(self):
+    def disconnect_from_zookeeper(self) -> None:
         """
         Close current connection to Zookeeper
 
@@ -75,10 +95,10 @@ class ZookeeperManager(object):
             | Disconnect From Zookeeper |
         """
 
-        self._connection.stop()
-        self._connection.close()
+        self.connection.stop()
+        self.connection.close()
 
-    def switch_zookeeper_connection(self, index_or_alias):
+    def switch_zookeeper_connection(self, index_or_alias: Union[int, str]) -> int:
         """
         Switch to another existing Zookeeper connection using its index or alias.\n
 
@@ -104,7 +124,7 @@ class ZookeeperManager(object):
         self._connection = self._cache.switch(index_or_alias)
         return old_index
 
-    def close_all_zookeeper_connections(self):
+    def close_all_zookeeper_connections(self) -> None:
         """
         Close all Zookeeper connections that were opened.
         After calling this keyword connection index returned by opening new connections [#Connect To Zookeeper |Connect To Zookeeper],
@@ -120,7 +140,7 @@ class ZookeeperManager(object):
         self._connection = self._cache.close_all(closer_method='stop')
         self._connection = self._cache.close_all(closer_method='close')
 
-    def create_node(self, path, value='', force=False):
+    def create_node(self, path: str, value: str = '', force: bool = False) -> None:
         """
         Create a node with a value.
 
@@ -139,10 +159,10 @@ class ZookeeperManager(object):
             | Create Node  |  /my/favorite/node  |  my_value |  ${TRUE} |
         """
 
-        string_value = value.encode(self._connection.zk_encoding)
-        self._connection.create(path, string_value, None, False, False, force)
+        string_value = value.encode(self.connection.zk_encoding)
+        self.connection.create(path, string_value, None, False, False, force)
 
-    def delete_node(self, path, force=False):
+    def delete_node(self, path: str, force: bool = False) -> None:
         """
         Delete a node.
 
@@ -158,14 +178,14 @@ class ZookeeperManager(object):
         """
 
         try:
-            self._connection.delete(path, -1, force)
+            self.connection.delete(path, -1, force)
         except NoNodeError:
             if force:
                 pass
             else:
                 raise
 
-    def exists(self, path):
+    def exists(self, path: str) -> bool:
         """
         Check if a node exists.
 
@@ -176,7 +196,7 @@ class ZookeeperManager(object):
             TRUE if a node exists, FALSE in other way.
         """
 
-        node_stat = self._connection.exists(path)
+        node_stat = self.connection.exists(path)
         if node_stat is not None:
             # Node exists
             return True
@@ -184,7 +204,7 @@ class ZookeeperManager(object):
             # Node doesn't exist
             return False
 
-    def set_value(self, path, value, force=False):
+    def set_value(self, path: str, value: str, force: bool = False) -> None:
         """
         Set the value of a node.
 
@@ -198,12 +218,12 @@ class ZookeeperManager(object):
             _ZookeeperError - value is too large or server returns non-zero error code.
         """
 
-        string_value = value.encode(self._connection.zk_encoding)
+        string_value = value.encode(self.connection.zk_encoding)
         if force:
-            self._connection.ensure_path(path)
-        self._connection.set(path, string_value)
+            self.connection.ensure_path(path)
+        self.connection.set(path, string_value)
 
-    def get_value(self, path):
+    def get_value(self, path: str) -> str:
         """
         Get the value of a node.
 
@@ -218,12 +238,10 @@ class ZookeeperManager(object):
             _ZookeeperError_ - server returns a non-zero error code.
         """
 
-        value, _stat = self._connection.get(path)
-        if PY3 and value is not None:
-            return value.decode(self._connection.zk_encoding)
-        return value
+        value, _stat = self.connection.get(path)
+        return value.decode(self.connection.zk_encoding)
 
-    def get_children(self, path):
+    def get_children(self, path: str) -> List[str]:
         """
         Get a list of node's children.
 
@@ -238,10 +256,10 @@ class ZookeeperManager(object):
             _ZookeeperError_ - server returns a non-zero error code.
         """
 
-        children = self._connection.get_children(path)
+        children = self.connection.get_children(path)
         return children
 
-    def check_node_value_existence(self, path):
+    def check_node_value_existence(self, path: str) -> None:
         """
         Check that value of node isn't empty.
 
@@ -256,7 +274,7 @@ class ZookeeperManager(object):
         else:
             BuiltIn().log("Zookeeper node {0} value is exist: '{1}' ".format(path, value))
 
-    def check_json_value(self, path, expr):
+    def check_json_value(self, path: str, expr: str) -> None:
         """
         Check that value of node matches JSONSelect expression
 
@@ -272,7 +290,7 @@ class ZookeeperManager(object):
         json_string = self.get_value(path)
         JsonValidator().element_should_exist(json_string, expr)
 
-    def check_node_value(self, path, value):
+    def check_node_value(self, path: str, value: str) -> None:
         """
         Check that value of the node is equal to the expected value
 
@@ -287,11 +305,11 @@ class ZookeeperManager(object):
 
         node_value = self.get_value(path)
         if node_value == value:
-            BuiltIn().log("Zookeeper node value is equal expected value: '{0}' ".format(value))
+            BuiltIn().log(f"Zookeeper node value is equal expected value: '{value}'")
         else:
-            raise Exception("Zookeeper node value is not equal expected value: '{0}' != '{1}' ".format(node_value, value))
+            raise Exception(f"Zookeeper node value is not equal expected value: '{node_value}' != '{value}'")
 
-    def safe_get_children(self, path):
+    def safe_get_children(self, path: str) -> List[str]:
         """
         Check that node exists and return its child nodes.
 
@@ -309,10 +327,10 @@ class ZookeeperManager(object):
             children = self.get_children(path)
             if children:
                 return children
-            raise Exception('There is no child for node {} in zookeeper'.format(path))
-        raise Exception('There is no node {} in zookeeper'.format(path))
+            raise Exception(f'There is no child for node {path} in zookeeper')
+        raise Exception(f'There is no node {path} in zookeeper')
 
-    def safe_get_value(self, path):
+    def safe_get_value(self, path: str) -> str:
         """
         Check that node exists and return its value if not empty or null.
 
@@ -322,6 +340,9 @@ class ZookeeperManager(object):
         *Returns:*\n
             Value of the node \n
 
+        *Raises:*\n
+            _NoNodeError_ - parent node doesn't exist.\n
+
         *Example:*\n
             | Connect To Zookeeper | 127.0.0.1: 2181 |
             | Safe Get Value | /my/favorite/node |
@@ -329,9 +350,10 @@ class ZookeeperManager(object):
         if self.exists(path):
             self.check_node_value_existence(path)
             return self.get_value(path)
-        raise Exception('There is no node {} in zookeeper'.format(path))
+        raise NoNodeError(f'There is no node {path} in zookeeper')
 
-    def check_zookeeper_list_availability(self, zookeeper_list, default_encoding='utf-8'):
+    def check_zookeeper_list_availability(self, zookeeper_list: List[Dict[str, str]],
+                                          default_encoding: str = 'utf-8') -> List[ZkCheckResult]:
         """
         Iterate over zookeeper instances from the list and check if connection to each can be created,
          after that return a list with results.
@@ -352,7 +374,7 @@ class ZookeeperManager(object):
         """
         results = list()
         for zookeeper in zookeeper_list:
-            result = dict()
+            result: ZkCheckResult = dict()
             zookeeper_host = '{}:{}'.format(zookeeper['host'], zookeeper['port'])
             result['test'] = '{} {}'.format(zookeeper['name'].upper(), zookeeper_host)
             try:
@@ -367,7 +389,7 @@ class ZookeeperManager(object):
                 results.append(result)
         return results
 
-    def check_zookeeper_nodes(self, zookeeper_nodes):
+    def check_zookeeper_nodes(self, zookeeper_nodes: List[str]) -> None:
         """Iterate over a list with main zookeeper nodes, checking that each exists.
 
         *Args:*\n
@@ -380,6 +402,5 @@ class ZookeeperManager(object):
         """
         for node in zookeeper_nodes:
             node_exists = self.exists(node)
-            message = "Node {0} doesn't exist.".format(node)
-            self.bi.should_be_true(condition=node_exists,
-                                   msg=message)
+            message = f"Node {node} doesn't exist."
+            self.bi.should_be_true(condition=node_exists, msg=message)
