@@ -14,7 +14,7 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
 
 setup(
     name='robotframework-zookeepermanager',
-    version='2.0.0',
+    version='2.0.2',
     description='Robot Framework library for working with Apache Zookeeper.',
     long_description=long_description,
     url='https://github.com/peterservice-rnd/robotframework-zookeepermanager',
@@ -34,7 +34,7 @@ setup(
     package_dir={'': 'src'},
     py_modules=['ZookeeperManager'],
     install_requires=[
-        "kazoo==2.2.1",
+        "kazoo==2.8.0",
         "robotframework",
         "robotframework-jsonvalidator"
     ],
